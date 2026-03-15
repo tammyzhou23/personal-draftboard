@@ -12,9 +12,9 @@ export default function AdminPage() {
   const [form, setForm] = useState({
     title: "",
     description: "",
-    imageUrl: "",
     tags: "",
   });
+  const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const fetchPosts = useCallback(async () => {
@@ -54,13 +54,28 @@ export default function AdminPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+
+    let imageUrl = "";
+    if (file) {
+      const uploadData = new FormData();
+      uploadData.append("file", file);
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: uploadData,
+      });
+      if (uploadRes.ok) {
+        const { url } = await uploadRes.json();
+        imageUrl = url;
+      }
+    }
+
     const res = await fetch("/api/posts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: form.title,
         description: form.description,
-        imageUrl: form.imageUrl,
+        imageUrl,
         tags: form.tags
           .split(",")
           .map((t) => t.trim())
@@ -68,7 +83,8 @@ export default function AdminPage() {
       }),
     });
     if (res.ok) {
-      setForm({ title: "", description: "", imageUrl: "", tags: "" });
+      setForm({ title: "", description: "", tags: "" });
+      setFile(null);
       fetchPosts();
     }
     setSubmitting(false);
@@ -144,12 +160,15 @@ export default function AdminPage() {
             rows={3}
             className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-accent resize-none"
           />
-          <input
-            placeholder="Image URL (optional)"
-            value={form.imageUrl}
-            onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-            className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-accent"
-          />
+          <div>
+            <label className="block text-sm text-muted mb-1">Image (optional)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-medium file:text-background file:cursor-pointer hover:file:opacity-90"
+            />
+          </div>
           <input
             placeholder="Tags, comma separated (optional)"
             value={form.tags}
