@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/Header";
 import { Post } from "@/lib/types";
 
@@ -15,7 +15,10 @@ export default function AdminPage() {
     tags: "",
   });
   const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchPosts = useCallback(async () => {
     const res = await fetch("/api/posts");
@@ -23,11 +26,43 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    // Check if already authenticated by trying to fetch
     fetch("/api/posts").then((res) => {
       if (res.ok) fetchPosts();
     });
   }, [fetchPosts]);
+
+  useEffect(() => {
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  function handleFile(f: File | null) {
+    if (f && f.type.startsWith("image/")) {
+      setFile(f);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFile(f);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -132,7 +167,7 @@ export default function AdminPage() {
       <Header />
       <main className="mx-auto max-w-2xl px-6 py-10">
         <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Admin</h1>
+          <h1 className="text-2xl font-semibold">Compose</h1>
           <button
             onClick={handleLogout}
             className="text-sm text-muted hover:text-foreground transition-colors"
@@ -143,45 +178,105 @@ export default function AdminPage() {
 
         <form
           onSubmit={handleCreate}
-          className="mb-10 flex flex-col gap-4 rounded-lg border border-border bg-card p-6"
+          className="mb-10 flex flex-col gap-5 rounded-lg border border-border bg-card p-6"
         >
-          <h2 className="font-medium">New Post</h2>
           <input
-            placeholder="Title"
+            placeholder="Add a title..."
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
             required
-            className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-accent"
+            className="bg-transparent text-xl font-semibold outline-none placeholder:text-muted/50"
           />
+
           <textarea
-            placeholder="Description (optional)"
+            placeholder="Write a description..."
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             rows={3}
-            className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-accent resize-none"
+            className="bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted/50 resize-none"
           />
-          <div>
-            <label className="block text-sm text-muted mb-1">Image (optional)</label>
+
+          {/* Upload area */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+            className={`relative cursor-pointer rounded-lg border-2 border-dashed transition-colors ${
+              dragging
+                ? "border-accent bg-accent/5"
+                : preview
+                  ? "border-border"
+                  : "border-border hover:border-muted"
+            }`}
+          >
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-medium file:text-background file:cursor-pointer hover:file:opacity-90"
+              onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+              className="hidden"
             />
+            {preview ? (
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={preview}
+                  alt="Upload preview"
+                  className="w-full rounded-lg object-contain max-h-80"
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFile(null);
+                  }}
+                  className="absolute top-2 right-2 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white hover:bg-black/80 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <svg
+                  className="mb-3 h-8 w-8 text-muted/50"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M12 16v-8m0 0l-3 3m3-3l3 3M2 12c0-4.714 0-7.071 1.464-8.536C4.93 2 7.286 2 12 2c4.714 0 7.071 0 8.535 1.464C22 4.93 22 7.286 22 12c0 4.714 0 7.071-1.465 8.535C19.072 22 16.714 22 12 22s-7.071 0-8.536-1.465C2 19.072 2 16.714 2 12z"
+                  />
+                </svg>
+                <p className="text-sm text-muted">
+                  Drop an image here, or click to browse
+                </p>
+                <p className="mt-1 text-xs text-muted/50">
+                  PNG, JPG, GIF, WebP
+                </p>
+              </div>
+            )}
           </div>
+
           <input
-            placeholder="Tags, comma separated (optional)"
+            placeholder="Tags, comma separated"
             value={form.tags}
             onChange={(e) => setForm({ ...form, tags: e.target.value })}
-            className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-accent"
+            className="bg-transparent text-sm outline-none placeholder:text-muted/50"
           />
-          <button
-            type="submit"
-            disabled={submitting}
-            className="self-end rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
-            {submitting ? "Posting..." : "Post"}
-          </button>
+
+          <div className="flex justify-end border-t border-border pt-4">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {submitting ? "Posting..." : "Publish"}
+            </button>
+          </div>
         </form>
 
         <div className="flex flex-col gap-3">
@@ -189,17 +284,25 @@ export default function AdminPage() {
           {posts.map((post) => (
             <div
               key={post.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
+              className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
             >
-              <div>
-                <p className="font-medium text-sm">{post.title}</p>
+              {post.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={post.imageUrl}
+                  alt=""
+                  className="h-10 w-10 rounded object-cover shrink-0"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-sm truncate">{post.title}</p>
                 <p className="text-xs text-muted">
                   {new Date(post.createdAt).toLocaleDateString()}
                 </p>
               </div>
               <button
                 onClick={() => handleDelete(post.id)}
-                className="text-xs text-red-500 hover:text-red-400 transition-colors"
+                className="text-xs text-red-500 hover:text-red-400 transition-colors shrink-0"
               >
                 Delete
               </button>
