@@ -42,9 +42,14 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/posts").then((res) => {
-      if (res.ok) fetchPosts();
-    });
+    fetch("/api/auth")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated) {
+          setAuthed(true);
+          fetchPosts();
+        }
+      });
   }, [fetchPosts]);
 
   useEffect(() => {
