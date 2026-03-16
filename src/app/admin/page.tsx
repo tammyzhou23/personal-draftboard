@@ -9,16 +9,23 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [posts, setPosts] = useState<Post[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
+    linkUrl: "",
     tags: "",
   });
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const fetchPosts = useCallback(async () => {
     const res = await fetch("/api/posts");
@@ -33,18 +40,59 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!file) {
-      setPreview(null);
+      if (!existingImageUrl) setPreview(null);
       return;
     }
     const url = URL.createObjectURL(file);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, [file, existingImageUrl]);
+
+  function resetForm() {
+    setEditingId(null);
+    setForm({ title: "", description: "", linkUrl: "", tags: "" });
+    setFile(null);
+    setPreview(null);
+    setExistingImageUrl(null);
+    setRemoveImage(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function startEdit(post: Post) {
+    setEditingId(post.id);
+    setForm({
+      title: post.title,
+      description: post.description,
+      linkUrl: post.linkUrl || "",
+      tags: post.tags.join(", "),
+    });
+    setFile(null);
+    setRemoveImage(false);
+    if (post.imageUrl) {
+      setExistingImageUrl(post.imageUrl);
+      setPreview(post.imageUrl);
+    } else {
+      setExistingImageUrl(null);
+      setPreview(null);
+    }
+    formRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
 
   function handleFile(f: File | null) {
     if (f && f.type.startsWith("image/")) {
       setFile(f);
+      setExistingImageUrl(null);
+      setRemoveImage(false);
     }
+  }
+
+  function handleRemoveImage(e: React.MouseEvent) {
+    e.stopPropagation();
+    setFile(null);
+    setPreview(null);
+    setExistingImageUrl(null);
+    setRemoveImage(true);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -86,42 +134,70 @@ export default function AdminPage() {
     setAuthed(false);
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  async function uploadImage(): Promise<string> {
+    if (!file) return "";
+    const uploadData = new FormData();
+    uploadData.append("file", file);
+    const uploadRes = await fetch("/api/upload", {
+      method: "POST",
+      body: uploadData,
+    });
+    if (uploadRes.ok) {
+      const { url } = await uploadRes.json();
+      return url;
+    }
+    return "";
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
 
-    let imageUrl = "";
-    if (file) {
-      const uploadData = new FormData();
-      uploadData.append("file", file);
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: uploadData,
-      });
-      if (uploadRes.ok) {
-        const { url } = await uploadRes.json();
-        imageUrl = url;
+    const tags = form.tags
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (editingId) {
+      // Editing existing post
+      let imageUrl: string | undefined;
+      if (file) {
+        imageUrl = await uploadImage();
+      } else if (removeImage) {
+        imageUrl = "";
       }
+      // undefined means don't change
+
+      await fetch("/api/posts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingId,
+          title: form.title,
+          description: form.description,
+          linkUrl: form.linkUrl,
+          tags,
+          ...(imageUrl !== undefined && { imageUrl }),
+        }),
+      });
+    } else {
+      // Creating new post
+      const imageUrl = await uploadImage();
+      await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: form.title,
+          description: form.description,
+          imageUrl,
+          linkUrl: form.linkUrl,
+          tags,
+        }),
+      });
     }
 
-    const res = await fetch("/api/posts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: form.title,
-        description: form.description,
-        imageUrl,
-        tags: form.tags
-          .split(",")
-          .map((t) => t.trim())
-          .filter(Boolean),
-      }),
-    });
-    if (res.ok) {
-      setForm({ title: "", description: "", tags: "" });
-      setFile(null);
-      fetchPosts();
-    }
+    resetForm();
+    fetchPosts();
     setSubmitting(false);
   }
 
@@ -132,7 +208,60 @@ export default function AdminPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    if (editingId === id) resetForm();
     fetchPosts();
+  }
+
+  async function handleMoveUp(index: number) {
+    if (index === 0) return;
+    const ids = posts.map((p) => p.id);
+    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+    const res = await fetch("/api/posts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds: ids }),
+    });
+    if (res.ok) setPosts(await res.json());
+  }
+
+  async function handleMoveDown(index: number) {
+    if (index === posts.length - 1) return;
+    const ids = posts.map((p) => p.id);
+    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
+    const res = await fetch("/api/posts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds: ids }),
+    });
+    if (res.ok) setPosts(await res.json());
+  }
+
+  function handleRowDragStart(index: number) {
+    setDragIdx(index);
+  }
+
+  function handleRowDragOver(e: React.DragEvent, index: number) {
+    e.preventDefault();
+    setDragOverIdx(index);
+  }
+
+  async function handleRowDrop(index: number) {
+    if (dragIdx === null || dragIdx === index) {
+      setDragIdx(null);
+      setDragOverIdx(null);
+      return;
+    }
+    const ids = posts.map((p) => p.id);
+    const [moved] = ids.splice(dragIdx, 1);
+    ids.splice(index, 0, moved);
+    setDragIdx(null);
+    setDragOverIdx(null);
+    const res = await fetch("/api/posts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds: ids }),
+    });
+    if (res.ok) setPosts(await res.json());
   }
 
   if (!authed) {
@@ -167,7 +296,9 @@ export default function AdminPage() {
       <Header />
       <main className="mx-auto max-w-2xl px-6 py-10">
         <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Compose</h1>
+          <h1 className="text-2xl font-semibold">
+            {editingId ? "Edit Post" : "Compose"}
+          </h1>
           <button
             onClick={handleLogout}
             className="text-sm text-muted hover:text-foreground transition-colors"
@@ -177,7 +308,8 @@ export default function AdminPage() {
         </div>
 
         <form
-          onSubmit={handleCreate}
+          ref={formRef}
+          onSubmit={handleSubmit}
           className="mb-10 flex flex-col gap-5 rounded-lg border border-border bg-card p-6"
         >
           <input
@@ -227,10 +359,7 @@ export default function AdminPage() {
                 />
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFile(null);
-                  }}
+                  onClick={handleRemoveImage}
                   className="absolute top-2 right-2 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white hover:bg-black/80 transition-colors"
                 >
                   Remove
@@ -261,6 +390,18 @@ export default function AdminPage() {
             )}
           </div>
 
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5">
+            <svg className="h-4 w-4 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            <input
+              placeholder="Live URL (Figma, demo, website...)"
+              value={form.linkUrl}
+              onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted/50"
+            />
+          </div>
+
           <input
             placeholder="Tags, comma separated"
             value={form.tags}
@@ -268,24 +409,68 @@ export default function AdminPage() {
             className="bg-transparent text-sm outline-none placeholder:text-muted/50"
           />
 
-          <div className="flex justify-end border-t border-border pt-4">
+          <div className="flex justify-end gap-3 border-t border-border pt-4">
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-lg px-5 py-2.5 text-sm font-medium text-muted hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+            )}
             <button
               type="submit"
               disabled={submitting}
               className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {submitting ? "Posting..." : "Publish"}
+              {submitting
+                ? editingId
+                  ? "Saving..."
+                  : "Posting..."
+                : editingId
+                  ? "Save Changes"
+                  : "Publish"}
             </button>
           </div>
         </form>
 
         <div className="flex flex-col gap-3">
           <h2 className="font-medium">Posts ({posts.length})</h2>
-          {posts.map((post) => (
+          {posts.length === 0 && (
+            <p className="text-sm text-muted py-4">No posts yet.</p>
+          )}
+          {posts.map((post, index) => (
             <div
               key={post.id}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
+              draggable
+              onDragStart={() => handleRowDragStart(index)}
+              onDragOver={(e) => handleRowDragOver(e, index)}
+              onDrop={() => handleRowDrop(index)}
+              onDragEnd={() => {
+                setDragIdx(null);
+                setDragOverIdx(null);
+              }}
+              className={`flex items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors ${
+                editingId === post.id
+                  ? "border-accent"
+                  : dragOverIdx === index
+                    ? "border-accent/50"
+                    : "border-border"
+              }`}
             >
+              {/* Drag handle */}
+              <div className="cursor-grab text-muted/40 hover:text-muted shrink-0">
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="9" cy="6" r="1.5" />
+                  <circle cx="15" cy="6" r="1.5" />
+                  <circle cx="9" cy="12" r="1.5" />
+                  <circle cx="15" cy="12" r="1.5" />
+                  <circle cx="9" cy="18" r="1.5" />
+                  <circle cx="15" cy="18" r="1.5" />
+                </svg>
+              </div>
+
               {post.imageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -300,7 +485,40 @@ export default function AdminPage() {
                   {new Date(post.createdAt).toLocaleDateString()}
                 </p>
               </div>
+
+              {/* Move arrows */}
+              <div className="flex flex-col shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleMoveUp(index)}
+                  disabled={index === 0}
+                  className="text-muted hover:text-foreground disabled:opacity-20 transition-colors"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMoveDown(index)}
+                  disabled={index === posts.length - 1}
+                  className="text-muted hover:text-foreground disabled:opacity-20 transition-colors"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+
               <button
+                type="button"
+                onClick={() => startEdit(post)}
+                className="text-xs text-accent hover:underline transition-colors shrink-0"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
                 onClick={() => handleDelete(post.id)}
                 className="text-xs text-red-500 hover:text-red-400 transition-colors shrink-0"
               >

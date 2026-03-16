@@ -44,6 +44,27 @@ export async function deletePost(id: string): Promise<void> {
   );
 }
 
+export async function reorderPosts(orderedIds: string[]): Promise<Post[]> {
+  const kv = getKv();
+  if (!kv) throw new Error("KV store not configured");
+  const posts = await getPosts();
+  const postMap = new Map(posts.map((p) => [p.id, p]));
+  const reordered: Post[] = [];
+  for (const id of orderedIds) {
+    const post = postMap.get(id);
+    if (post) {
+      reordered.push(post);
+      postMap.delete(id);
+    }
+  }
+  // append any posts not in the ordered list
+  for (const post of postMap.values()) {
+    reordered.push(post);
+  }
+  await kv.set(POSTS_KEY, reordered);
+  return reordered;
+}
+
 export async function updatePost(
   id: string,
   updates: Partial<Omit<Post, "id" | "createdAt">>
