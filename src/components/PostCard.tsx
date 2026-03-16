@@ -11,16 +11,26 @@ export function PostCard({ post }: { post: Post }) {
 
   return (
     <article className="group overflow-hidden rounded-lg border border-border bg-card transition-shadow hover:shadow-md">
-      {post.imageUrl && (
+      {post.mediaUrl && post.mediaType === "video" ? (
+        <div className="overflow-hidden">
+          <video
+            src={post.mediaUrl}
+            controls
+            playsInline
+            preload="metadata"
+            className="w-full"
+          />
+        </div>
+      ) : post.mediaUrl ? (
         <div className="overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={post.imageUrl}
+            src={post.mediaUrl}
             alt={post.title}
             className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           />
         </div>
-      )}
+      ) : null}
       <div className="p-4">
         <h2 className="font-semibold leading-snug">{post.title}</h2>
         {post.description && (

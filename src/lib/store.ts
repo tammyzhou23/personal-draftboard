@@ -1,5 +1,5 @@
 import { createClient } from "@vercel/kv";
-import { Post } from "./types";
+import { Post, normalizePost } from "./types";
 
 const POSTS_KEY = "draftboard:posts";
 
@@ -15,8 +15,8 @@ function getKv() {
 export async function getPosts(): Promise<Post[]> {
   const kv = getKv();
   if (!kv) return [];
-  const posts = await kv.get<Post[]>(POSTS_KEY);
-  return posts ?? [];
+  const raw = await kv.get<Record<string, unknown>[]>(POSTS_KEY);
+  return (raw ?? []).map(normalizePost);
 }
 
 export async function createPost(

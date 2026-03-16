@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { title, description, imageUrl, tags } = body;
+  const { title, description, mediaUrl, mediaType, tags } = body;
 
   if (!title) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
   const post = await createPost({
     title,
     description: description || "",
-    imageUrl: imageUrl || "",
+    mediaUrl: mediaUrl || "",
+    mediaType: mediaType || "",
     linkUrl: body.linkUrl || "",
     tags: tags || [],
   });
@@ -42,7 +43,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { id, title, description, imageUrl, linkUrl, tags } = body;
+  const { id, title, description, mediaUrl, mediaType, linkUrl, tags } = body;
 
   if (!id) {
     return NextResponse.json({ error: "ID is required" }, { status: 400 });
@@ -51,7 +52,8 @@ export async function PUT(request: NextRequest) {
   const post = await updatePost(id, {
     ...(title !== undefined && { title }),
     ...(description !== undefined && { description }),
-    ...(imageUrl !== undefined && { imageUrl }),
+    ...(mediaUrl !== undefined && { mediaUrl }),
+    ...(mediaType !== undefined && { mediaType }),
     ...(linkUrl !== undefined && { linkUrl }),
     ...(tags !== undefined && { tags }),
   });

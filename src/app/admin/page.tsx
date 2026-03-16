@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/Header";
 import { Post } from "@/lib/types";
 
+function isVideo(file: File) {
+  return file.type.startsWith("video/");
+}
+
+function isMedia(file: File) {
+  return file.type.startsWith("image/") || file.type.startsWith("video/");
+}
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
@@ -18,8 +26,9 @@ export default function AdminPage() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
-  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
-  const [removeImage, setRemoveImage] = useState(false);
+  const [previewType, setPreviewType] = useState<"image" | "video" | null>(null);
+  const [existingMedia, setExistingMedia] = useState<{ url: string; type: Post["mediaType"] } | null>(null);
+  const [removeMedia, setRemoveMedia] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -40,21 +49,26 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!file) {
-      if (!existingImageUrl) setPreview(null);
+      if (!existingMedia) {
+        setPreview(null);
+        setPreviewType(null);
+      }
       return;
     }
     const url = URL.createObjectURL(file);
     setPreview(url);
+    setPreviewType(isVideo(file) ? "video" : "image");
     return () => URL.revokeObjectURL(url);
-  }, [file, existingImageUrl]);
+  }, [file, existingMedia]);
 
   function resetForm() {
     setEditingId(null);
     setForm({ title: "", description: "", linkUrl: "", tags: "" });
     setFile(null);
     setPreview(null);
-    setExistingImageUrl(null);
-    setRemoveImage(false);
+    setPreviewType(null);
+    setExistingMedia(null);
+    setRemoveMedia(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -67,31 +81,34 @@ export default function AdminPage() {
       tags: post.tags.join(", "),
     });
     setFile(null);
-    setRemoveImage(false);
-    if (post.imageUrl) {
-      setExistingImageUrl(post.imageUrl);
-      setPreview(post.imageUrl);
+    setRemoveMedia(false);
+    if (post.mediaUrl) {
+      setExistingMedia({ url: post.mediaUrl, type: post.mediaType });
+      setPreview(post.mediaUrl);
+      setPreviewType(post.mediaType === "video" ? "video" : "image");
     } else {
-      setExistingImageUrl(null);
+      setExistingMedia(null);
       setPreview(null);
+      setPreviewType(null);
     }
     formRef.current?.scrollIntoView({ behavior: "smooth" });
   }
 
   function handleFile(f: File | null) {
-    if (f && f.type.startsWith("image/")) {
+    if (f && isMedia(f)) {
       setFile(f);
-      setExistingImageUrl(null);
-      setRemoveImage(false);
+      setExistingMedia(null);
+      setRemoveMedia(false);
     }
   }
 
-  function handleRemoveImage(e: React.MouseEvent) {
+  function handleRemoveMedia(e: React.MouseEvent) {
     e.stopPropagation();
     setFile(null);
     setPreview(null);
-    setExistingImageUrl(null);
-    setRemoveImage(true);
+    setPreviewType(null);
+    setExistingMedia(null);
+    setRemoveMedia(true);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -134,8 +151,8 @@ export default function AdminPage() {
     setAuthed(false);
   }
 
-  async function uploadImage(): Promise<string> {
-    if (!file) return "";
+  async function uploadFile(): Promise<{ url: string; mediaType: Post["mediaType"] }> {
+    if (!file) return { url: "", mediaType: "" };
     const uploadData = new FormData();
     uploadData.append("file", file);
     const uploadRes = await fetch("/api/upload", {
@@ -143,10 +160,10 @@ export default function AdminPage() {
       body: uploadData,
     });
     if (uploadRes.ok) {
-      const { url } = await uploadRes.json();
-      return url;
+      const data = await uploadRes.json();
+      return { url: data.url, mediaType: data.mediaType };
     }
-    return "";
+    return { url: "", mediaType: "" };
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -159,14 +176,16 @@ export default function AdminPage() {
       .filter(Boolean);
 
     if (editingId) {
-      // Editing existing post
-      let imageUrl: string | undefined;
+      let mediaUrl: string | undefined;
+      let mediaType: Post["mediaType"] | undefined;
       if (file) {
-        imageUrl = await uploadImage();
-      } else if (removeImage) {
-        imageUrl = "";
+        const uploaded = await uploadFile();
+        mediaUrl = uploaded.url;
+        mediaType = uploaded.mediaType;
+      } else if (removeMedia) {
+        mediaUrl = "";
+        mediaType = "";
       }
-      // undefined means don't change
 
       await fetch("/api/posts", {
         method: "PUT",
@@ -177,19 +196,20 @@ export default function AdminPage() {
           description: form.description,
           linkUrl: form.linkUrl,
           tags,
-          ...(imageUrl !== undefined && { imageUrl }),
+          ...(mediaUrl !== undefined && { mediaUrl }),
+          ...(mediaType !== undefined && { mediaType }),
         }),
       });
     } else {
-      // Creating new post
-      const imageUrl = await uploadImage();
+      const uploaded = await uploadFile();
       await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: form.title,
           description: form.description,
-          imageUrl,
+          mediaUrl: uploaded.url,
+          mediaType: uploaded.mediaType,
           linkUrl: form.linkUrl,
           tags,
         }),
@@ -345,21 +365,32 @@ export default function AdminPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               className="hidden"
             />
             {preview ? (
               <div className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={preview}
-                  alt="Upload preview"
-                  className="w-full rounded-lg object-contain max-h-80"
-                />
+                {previewType === "video" ? (
+                  <video
+                    src={preview}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="w-full rounded-lg max-h-80"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={preview}
+                    alt="Upload preview"
+                    className="w-full rounded-lg object-contain max-h-80"
+                  />
+                )}
                 <button
                   type="button"
-                  onClick={handleRemoveImage}
+                  onClick={handleRemoveMedia}
                   className="absolute top-2 right-2 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white hover:bg-black/80 transition-colors"
                 >
                   Remove
@@ -381,10 +412,10 @@ export default function AdminPage() {
                   />
                 </svg>
                 <p className="text-sm text-muted">
-                  Drop an image here, or click to browse
+                  Drop an image or video here, or click to browse
                 </p>
                 <p className="mt-1 text-xs text-muted/50">
-                  PNG, JPG, GIF, WebP
+                  PNG, JPG, GIF, WebP, MP4, MOV, WebM
                 </p>
               </div>
             )}
@@ -471,18 +502,25 @@ export default function AdminPage() {
                 </svg>
               </div>
 
-              {post.imageUrl && (
+              {post.mediaUrl && post.mediaType === "video" ? (
+                <div className="h-10 w-10 rounded bg-muted/20 flex items-center justify-center shrink-0">
+                  <svg className="h-4 w-4 text-muted" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              ) : post.mediaUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={post.imageUrl}
+                  src={post.mediaUrl}
                   alt=""
                   className="h-10 w-10 rounded object-cover shrink-0"
                 />
-              )}
+              ) : null}
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-sm truncate">{post.title}</p>
                 <p className="text-xs text-muted">
                   {new Date(post.createdAt).toLocaleDateString()}
+                  {post.mediaType === "video" && " · Video"}
                 </p>
               </div>
 

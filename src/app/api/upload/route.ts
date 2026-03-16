@@ -14,9 +14,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+
+  if (!isImage && !isVideo) {
+    return NextResponse.json(
+      { error: "Only image and video files are supported" },
+      { status: 400 }
+    );
+  }
+
   const blob = await put(file.name, file, {
     access: "public",
   });
 
-  return NextResponse.json({ url: blob.url });
+  return NextResponse.json({
+    url: blob.url,
+    mediaType: isVideo ? "video" : "image",
+  });
 }
