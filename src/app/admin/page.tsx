@@ -292,7 +292,7 @@ export default function AdminPage() {
   if (!authed) {
     return (
       <div className="min-h-screen">
-        <Header />
+        <Header showAdmin />
         <main className="mx-auto max-w-sm px-6 py-20">
           <h1 className="mb-6 text-2xl font-semibold">Admin</h1>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
@@ -318,7 +318,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen">
-      <Header />
+      <Header showAdmin />
       <main className="mx-auto max-w-2xl px-6 py-10">
         <div className="mb-8 flex items-center justify-between">
           <h1 className="text-2xl font-semibold">
@@ -422,6 +422,9 @@ export default function AdminPage() {
                 <p className="mt-1 text-xs text-muted/50">
                   PNG, JPG, GIF, WebP, MP4, MOV, WebM
                 </p>
+                <p className="mt-2 text-xs text-accent">
+                  Media is required
+                </p>
               </div>
             )}
           </div>
@@ -457,7 +460,7 @@ export default function AdminPage() {
             )}
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (!editingId && !file) || (editingId === null ? false : (removeMedia && !file))}
               className="rounded-lg bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {submitting

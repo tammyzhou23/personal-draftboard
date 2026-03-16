@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Draftboard",
+  title: "Tammy's Draftboard",
   description: "Personal design samples and tinkerings",
 };
 

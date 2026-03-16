@@ -13,15 +13,18 @@ export default async function Home() {
       <main className="mx-auto max-w-6xl px-6 py-10">
         {posts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-center">
-            <p className="text-lg text-muted">Nothing here yet.</p>
-            <p className="mt-1 text-sm text-muted">
-              Posts will show up once you add them from /admin.
+            <div className="mb-6 text-6xl opacity-30 select-none" aria-hidden="true">
+              &#9998;
+            </div>
+            <p className="text-xl font-medium text-foreground/70">Watch this space</p>
+            <p className="mt-2 max-w-xs text-sm text-muted">
+              New work, experiments, and ideas will appear here as they come together.
             </p>
           </div>
         ) : (
           <div className="masonry">
-            {posts.map((post) => (
-              <PostCard key={post.id} post={post} />
+            {posts.map((post, index) => (
+              <PostCard key={post.id} post={post} featured={index === 0} />
             ))}
           </div>
         )}
